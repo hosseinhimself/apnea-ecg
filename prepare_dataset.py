@@ -2,7 +2,7 @@ import os
 import shutil
 
 # 1. Adjust these paths to your setup:
-SRC_ROOT = "/media/hossein/f4dbfedf-df3c-4514-a2e1-7cfab19e706b/Projects/OSA/apnea-ecg-database-1.0.0"
+SRC_ROOT = "apnea-ecg-database-1.0.0"
 DST_ROOT = os.path.join(os.getcwd(), "apnea-ecg")
 
 RECORDS_DIR = os.path.join(DST_ROOT, "records")
