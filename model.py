@@ -100,25 +100,20 @@ class Model(nn.Module):
         # Output channels for each conv layer = model_dim (64 by default)
         cnn_channels_in = 1
         cnn_channels_out = self.model_dim
-        kernel_size = 3
-        padding = (kernel_size - 1) // 2  # to maintain sequence length ("same" padding)
-
-        # Using a nn.ModuleList to hold the sequence of conv layers, activations, and dropout
         cnn_layers = []
+
         for i in range(self.cnn_num_layers):
-            conv = nn.Conv1d(
-                in_channels=cnn_channels_in,
-                out_channels=cnn_channels_out,
-                kernel_size=kernel_size,
-                stride=1,
-                padding=padding,
-                bias=True,
-            )
-            cnn_layers.append(conv)
-            cnn_layers.append(self.cnn_activation)
-            cnn_layers.append(nn.Dropout(p=self.cnn_dropout_rate))
-            # After first layer, input channels = output channels = model_dim
+            layers = [
+                nn.Conv1d(cnn_channels_in, cnn_channels_out, kernel_size=32, padding=16),
+                nn.BatchNorm1d(cnn_channels_out),
+                nn.ReLU(inplace=True)
+            ]
+            if i < 4:
+                layers.append(nn.MaxPool1d(kernel_size=2))
+            layers.append(nn.Dropout(p=self.cnn_dropout_rate))
+            cnn_layers.extend(layers)
             cnn_channels_in = cnn_channels_out
+
         self.cnn = nn.Sequential(*cnn_layers)  # processes input of shape (N, C, L)
 
         # Positional Encoding -----------------------------------------------------
@@ -145,25 +140,10 @@ class Model(nn.Module):
             num_layers=self.num_encoder_layers
         )
 
-        if self.encoder_decoder:
-            decoder_layer = nn.TransformerDecoderLayer(
-                d_model=self.model_dim,
-                nhead=self.nhead,
-                dim_feedforward=self.dim_feedforward,
-                dropout=self.transformer_dropout_rate,
-                activation='relu',
-                batch_first=False
-            )
-            self.transformer_decoder = nn.TransformerDecoder(
-                decoder_layer,
-                num_layers=self.num_decoder_layers
-            )
-            # Learnable decoder input token (query) of shape (1, 1, model_dim) initialized randomly
-            # It will be repeated across batch dimension during forward
-            self.decoder_input = nn.Parameter(torch.randn(1, 1, self.model_dim))
-        else:
-            self.transformer_decoder = None
-            self.decoder_input = None
+        # No decoder used as per paper
+        self.transformer_decoder = None
+        self.decoder_input = None
+
 
         # Classification head -----------------------------------------------------
         # Final linear layer maps pooled transformer output to output logits
@@ -220,18 +200,7 @@ class Model(nn.Module):
         # Transformer encoder output
         memory = self.transformer_encoder(features)  # (L, N, model_dim)
 
-        if self.encoder_decoder:
-            # Prepare decoder input: learned parameter repeated along batch dimension
-            # decoder_input shape: (1, batch_size, model_dim)
-            tgt = self.decoder_input.repeat(1, batch_size, 1)  # (1, N, model_dim)
-            # Generate output from transformer decoder
-            output = self.transformer_decoder(tgt=tgt, memory=memory)  # (1, N, model_dim)
-            # Remove sequence dimension (which is 1), permute to (N, model_dim)
-            output = output.squeeze(0).permute(0, 1)  # (N, model_dim)
-        else:
-            # If no decoder, use encoder output: pool over sequence (dim=0)
-            # shape encoder output: (L, N, model_dim)
-            output = memory.mean(dim=0)  # (N, model_dim)
+        output = memory.mean(dim=0)  # Global Average Pooling over sequence
 
         # Classification head
         output = self.classifier_dropout(output)  # (N, model_dim)

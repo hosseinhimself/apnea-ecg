@@ -5,7 +5,7 @@ dataset:
   sampling_rate: 100
   segment_lengths:
     - 60   # in seconds, 1-minute segments
-    - 180  # in seconds, 3-minute segments
+  #  - 180  # in seconds, 3-minute segments
   preprocessing:
     bandpass_filter:
       lowcut: 0.5
@@ -19,7 +19,7 @@ model:
     dropout: 0.3
     activation: relu
   transformer:
-    encoder_decoder: true
+    encoder_decoder: false
     dropout: 0.3
     # Specific transformer parameters are not provided in the paper and should be configurable
 

@@ -44,6 +44,7 @@ class Trainer:
         self.train_loader: DataLoader = train_loader
         self.val_loader: DataLoader = val_loader
         self.config: Dict = config
+        torch.backends.cudnn.benchmark = True
 
         # Device assignment
         self.device: torch.device = (
