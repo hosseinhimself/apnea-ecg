@@ -75,6 +75,7 @@ def run_experiment_for_segment_length(
     print("[Data] Preprocessing and segmenting ECG signals...")
     try:
         segments, labels = dataset_loader.preprocess_and_segment()
+        print("📊 Label distribution:", torch.bincount(labels))
     except Exception as e:
         print(f"ERROR: Preprocessing and segmentation failed - {str(e)}")
         sys.exit(1)
@@ -210,6 +211,7 @@ def main() -> None:
     for seg_len in segment_lengths:
         try:
             run_experiment_for_segment_length(config, seg_len)
+
         except Exception as e:
             print(f"ERROR: Exception during experiment with segment length {seg_len}s: {str(e)}")
             print("Skipping to next segment length if available.")

@@ -89,10 +89,23 @@ class Trainer:
                 batch_y = batch_y.to(self.device, non_blocking=True)
 
                 self.optimizer.zero_grad()
-                outputs = self.model(batch_x)  # logits shape (batch_size, 2)
+                outputs = self.model(batch_x)
+
+                # Check for NaN before loss
+                if torch.isnan(outputs).any():
+                    print("❌ NaN in outputs! Values:", outputs[:3])
+                    continue
+
                 loss = self.criterion(outputs, batch_y)
+
+                # Check for NaN in loss
+                if torch.isnan(loss):
+                    print("❌ NaN loss! Logits:", outputs[:3], "Labels:", batch_y[:3])
+                    continue
+
                 loss.backward()
                 self.optimizer.step()
+
 
                 epoch_train_loss += loss.item() * batch_x.size(0)
 
