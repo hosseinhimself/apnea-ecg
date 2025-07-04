@@ -84,12 +84,23 @@ class Trainer:
             correct_train = 0
             total_train = 0
 
-            for batch_x, batch_y in self.train_loader:
+            for batch_idx, (batch_x, batch_y) in enumerate(self.train_loader):
                 batch_x = batch_x.to(self.device, non_blocking=True)
                 batch_y = batch_y.to(self.device, non_blocking=True)
 
                 self.optimizer.zero_grad()
                 outputs = self.model(batch_x)
+
+                # DEBUG: Print details for the first batch of the first epoch
+                if epoch == 1 and batch_idx == 0:
+                    print("\n[Debug] First training step details:")
+                    print(f"  Model outputs (logits): \n{outputs[:5]}") # Print first 5 logits
+                    print(f"  Ground truth labels: \n{batch_y[:5]}")
+                    loss = self.criterion(outputs, batch_y)
+                    print(f"  Calculated Loss: {loss.item()}")
+                    print("-" * 20)
+                else:
+                    loss = self.criterion(outputs, batch_y)
 
                 # Check for NaN before loss
                 if torch.isnan(outputs).any():

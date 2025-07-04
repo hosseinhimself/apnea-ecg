@@ -112,6 +112,18 @@ def run_experiment_for_segment_length(
     print(f"[Data] Validation set size: {len(val_loader.dataset)} samples")
     print(f"[Data] Test set size: {len(test_loader.dataset)} samples")
 
+    # DEBUG: Inspect the first batch of the training loader
+    print("\n[Debug] Inspecting first batch of train_loader...")
+    try:
+        first_batch_data, first_batch_labels = next(iter(train_loader))
+        print(f"  Data shape: {first_batch_data.shape}")
+        print(f"  Labels in first batch: {first_batch_labels}")
+        if len(first_batch_labels) > 0:
+            print(f"  Label distribution in first batch: {torch.bincount(first_batch_labels.long())}")
+    except StopIteration:
+        print("  Could not get a batch from train_loader, it might be empty.")
+    print("-" * 20)
+
     # --- STEP 2: Instantiate Model with config parameters ---
 
     print("[Model] Building CNN-Transformer model...")

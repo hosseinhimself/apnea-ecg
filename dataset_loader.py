@@ -109,6 +109,14 @@ class DatasetLoader:
             positions = [int(s) for s, sym in zip(ann.sample, ann.symbol) if sym.upper() == "A"]
             self.apnea_annotations[rid] = self._positions_to_intervals(sorted(positions))
 
+        # DEBUG: Print a sample of the loaded annotations to verify correctness
+        print("\n[Debug] Sample of loaded apnea annotations:")
+        for i, rid in enumerate(list(self.apnea_annotations.keys())[:3]):
+            print(f"  Record '{rid}': {self.apnea_annotations[rid][:5]}") # Print first 5 intervals
+        if not self.apnea_annotations:
+            print("  No apnea annotations were loaded.")
+        print("-" * 20)
+
         return {"signals": self.raw_signals, "annotations": self.apnea_annotations}
 
     def _positions_to_intervals(self, positions: List[int]) -> List[Tuple[int, int]]:
