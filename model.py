@@ -4,88 +4,69 @@ from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-
+# PositionalEncoding class remains the same...
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model: int, max_len: int = 20000, device: Optional[torch.device] = None) -> None:
         super().__init__()
-        self.d_model = d_model
-        self.max_len = max_len
-
         pe = torch.zeros(max_len, d_model, device=device)
         position = torch.arange(0, max_len, dtype=torch.float32, device=device).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float32, device=device) *
                              (-torch.log(torch.tensor(10000.0)) / d_model))
-
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-
         self.register_buffer('pe', pe)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         seq_len = x.size(0)
-        if seq_len > self.max_len:
-            raise ValueError(
-                f"Sequence length {seq_len} exceeds maximum positional encoding length {self.max_len}."
-            )
         return x + self.pe[:seq_len, :].unsqueeze(1).to(x.dtype)
-
 
 class Model(nn.Module):
     def __init__(self, params: Dict) -> None:
         super().__init__()
 
+        # <<< FIX: Parameters must match the paper EXACTLY >>>
         cnn_cfg = params.get("model", {}).get("cnn", {})
         transformer_cfg = params.get("model", {}).get("transformer", {})
 
-        self.cnn_num_layers: int = int(cnn_cfg.get("num_layers", 10))
-        self.cnn_dropout_rate: float = float(cnn_cfg.get("dropout", 0.1))
-        cnn_activation_str: str = cnn_cfg.get("activation", "relu").lower()
-
+        # CNN parameters from paper
+        self.cnn_dropout_rate: float = float(cnn_cfg.get("dropout", 0.3))
+        self.cnn_kernel_size: int = 32
+        self.cnn_padding: int = 16
+        
+        # Transformer parameters from paper
+        self.model_dim: int = 64 # This is d_model in the paper
+        self.nhead: int = 2
+        self.num_encoder_layers: int = 2
+        self.dim_feedforward: int = 128
         self.transformer_dropout_rate: float = float(transformer_cfg.get("dropout", 0.3))
-        self.num_encoder_layers: int = int(transformer_cfg.get("num_encoder_layers", 2))
-        self.nhead: int = int(transformer_cfg.get("nhead", 2))
-        self.dim_feedforward: int = int(transformer_cfg.get("dim_feedforward", 128))
-        self.model_dim: int = int(transformer_cfg.get("model_dim", 32))
 
-        if cnn_activation_str == "relu":
-            self.cnn_activation = nn.ReLU(inplace=True)
-        else:
-            raise ValueError(f"Unsupported activation function '{cnn_activation_str}' for CNN.")
-
-        # <--- FIX: Rewriting the CNN block for clarity, robustness, and correctness --->
-        # The original implementation was confusing and prone to errors.
-        # This version uses a more standard way of stacking layers.
-        # We also use a smaller kernel size (3) which is more conventional and efficient.
-        # Using bias=False in Conv1d when followed by BatchNorm is a standard practice.
+        # --- Build the CNN part EXACTLY as in Figure 2 of the paper ---
         cnn_layers = []
-        in_channels = 1
-        out_channels = self.model_dim
+        # First 4 blocks with Conv1D, BN, ReLU, MaxPool, Dropout
+        in_ch = 1
+        for i in range(4):
+            cnn_layers.extend([
+                nn.Conv1d(in_ch, self.model_dim, kernel_size=self.cnn_kernel_size, padding=self.cnn_padding),
+                nn.BatchNorm1d(self.model_dim),
+                nn.ReLU(inplace=True),
+                nn.MaxPool1d(kernel_size=2),
+                nn.Dropout(p=self.cnn_dropout_rate)
+            ])
+            in_ch = self.model_dim # After the first layer, in_channels is model_dim
 
-        for i in range(self.cnn_num_layers):
-            # For the first layer, input channels are 1. For subsequent layers, it's model_dim.
-            current_in_channels = in_channels if i == 0 else out_channels
-            
-            layer_block = [
-                nn.Conv1d(current_in_channels, out_channels, kernel_size=3, padding=1, bias=False),
-                nn.BatchNorm1d(out_channels),
-                self.cnn_activation
-            ]
-            
-            # Add pooling layers, similar to the original logic
-            if i < 6:
-                layer_block.append(nn.MaxPool1d(kernel_size=2))
-            
-            layer_block.append(nn.Dropout(p=self.cnn_dropout_rate))
-            cnn_layers.extend(layer_block)
-
+        # Next 6 blocks with Conv1D, BN, ReLU, Dropout (no MaxPool)
+        for i in range(6):
+            cnn_layers.extend([
+                nn.Conv1d(self.model_dim, self.model_dim, kernel_size=self.cnn_kernel_size, padding=self.cnn_padding),
+                nn.BatchNorm1d(self.model_dim),
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=self.cnn_dropout_rate)
+            ])
         self.cnn = nn.Sequential(*cnn_layers)
-        # <--- END FIX --->
+        # --- End of CNN block ---
 
-        self.positional_encoding = PositionalEncoding(
-            d_model=self.model_dim, max_len=20000, device=None
-        )
+        self.positional_encoding = PositionalEncoding(d_model=self.model_dim, max_len=20000)
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=self.model_dim,
@@ -95,48 +76,26 @@ class Model(nn.Module):
             activation='relu',
             batch_first=False
         )
-        self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer,
-            num_layers=self.num_encoder_layers
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=self.num_encoder_layers)
+
+        # Decoder part as described in the paper (GAP + FFN)
+        self.decoder = nn.Sequential(
+            nn.Linear(self.model_dim, self.model_dim), # Paper mentions two linear layers
+            nn.ReLU(inplace=True),
+            nn.Linear(self.model_dim, 2) # Output dimension is 2 (apnea/normal)
         )
 
-        self.classifier_dropout = nn.Dropout(p=0.1)
-        self.classifier = nn.Linear(self.model_dim, 2)
-
-        self._reset_parameters()
-
-    def _reset_parameters(self) -> None:
-        for m in self.modules():
-            if isinstance(m, nn.Conv1d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size, seq_len, channels = x.shape
-        if channels != 1:
-            raise ValueError(f"Expected 1 channel input, got {channels} channels.")
-
         x = x.permute(0, 2, 1)
         features = self.cnn(x)
         features = features.permute(2, 0, 1)
 
-        device = features.device
-        if self.positional_encoding.pe.device != device:
-            self.positional_encoding.pe = self.positional_encoding.pe.to(device)
-
         features = self.positional_encoding(features)
         memory = self.transformer_encoder(features)
-        output = memory.mean(dim=0)
-        output = self.classifier_dropout(output)
-
-        # <--- FIX: Removed the problematic line that was hiding the NaN issue --->
-        # output = torch.nan_to_num(output, nan=0.0, posinf=1.0, neginf=-1.0)
         
-        logits = self.classifier(output)
+        # Global Average Pooling
+        output = memory.mean(dim=0)
+        
+        logits = self.decoder(output)
         return logits
     
