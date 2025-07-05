@@ -1,14 +1,16 @@
 dataset:
   name: Apnea-ECG
   source_url: https://physionet.org/content/apnea-ecg/1.0.0/
+  root_dir: apnea-ecg  # اضافه کردن این خط
   sampling_rate: 100
   segment_lengths: [60]
-  preprocessing:
-    bandpass_filter:
-      lowcut: 0.5
-      highcut: 48
-      order: 4
-    normalization: z-score
+  
+preprocessing:  # این بخش باید دقیقاً با این نام وجود داشته باشد
+  bandpass_filter:
+    lowcut: 0.5
+    highcut: 48
+    order: 4
+  normalization: z-score
 
 model:
   cnn:
@@ -38,8 +40,3 @@ evaluation:
     - specificity
     - f1_score
     - auc
-  segment_wise:
-    window_sizes: [60]
-  recording_wise:
-    classification_accuracy: true
-    ahi_mae: true

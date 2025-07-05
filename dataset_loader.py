@@ -13,16 +13,14 @@ class DatasetLoader:
         self.segment_lengths = config["dataset"].get("segment_lengths", [60])
         self.batch_size = config["training"].get("batch_size", 32)
         
-        # Preprocessing params
-        pp_cfg = config["preprocessing"]
-        self.lowcut = pp_cfg["bandpass_filter"]["lowcut"]
-        self.highcut = pp_cfg["bandpass_filter"]["highcut"]
-        self.order = pp_cfg["bandpass_filter"]["order"]
+        # تغییر این بخش برای مدیریت مواردی که preprocessing وجود ندارد
+        pp_cfg = config.get("preprocessing", {})
+        bp_cfg = pp_cfg.get("bandpass_filter", {})
         
-        self.records_path = self._find_records_path()
-        self.raw_signals = {}
-        self.segment_data = {}
-        self.random_seed = 42
+        self.lowcut = bp_cfg.get("lowcut", 0.5)
+        self.highcut = bp_cfg.get("highcut", 40.0)
+        self.order = bp_cfg.get("order", 4)
+        self.normalization_method = pp_cfg.get("normalization", "z-score")
 
     def _find_records_path(self):
         if not os.path.isdir(self.dataset_root):
