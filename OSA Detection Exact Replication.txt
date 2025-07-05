@@ -1,0 +1,65 @@
+=====================================================
+OSA Detection - Exact Replication of the Paper
+Using config file: config.yaml
+======================================================
+[Data] Initializing DatasetLoader and creating dataloaders...
+Loading and processing released set for training/validation...
+Loading and processing withheld set for testing...
+Train samples: 13571, Validation samples: 3392, Test samples: 17187
+[Data] Dataloaders created successfully.
+[Model] Building CNN-Transformer model as per the paper's architecture...
+/usr/local/lib/python3.11/dist-packages/torch/nn/modules/transformer.py:385: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.self_attn.batch_first was not True(use batch_first for better inference performance)
+  warnings.warn(
+[Training] Starting training process based on the paper's methodology...
+Epoch [01/70] Train Loss: 0.3396 | Val Loss: 0.3242, Val Acc: 87.91%
+INFO: Validation loss decreased (inf --> 0.3242). Saving model to 'best_model.pth'
+Epoch [02/70] Train Loss: 0.2522 | Val Loss: 0.2502, Val Acc: 90.15%
+INFO: Validation loss decreased (0.3242 --> 0.2502). Saving model to 'best_model.pth'
+Epoch [03/70] Train Loss: 0.2260 | Val Loss: 0.2218, Val Acc: 91.45%
+INFO: Validation loss decreased (0.2502 --> 0.2218). Saving model to 'best_model.pth'
+Epoch [04/70] Train Loss: 0.2105 | Val Loss: 0.2661, Val Acc: 88.92%
+Epoch [05/70] Train Loss: 0.2028 | Val Loss: 0.1995, Val Acc: 92.28%
+INFO: Validation loss decreased (0.2218 --> 0.1995). Saving model to 'best_model.pth'
+Epoch [06/70] Train Loss: 0.1988 | Val Loss: 0.2109, Val Acc: 92.10%
+Epoch [07/70] Train Loss: 0.1876 | Val Loss: 0.2068, Val Acc: 91.98%
+Epoch [08/70] Train Loss: 0.1890 | Val Loss: 0.2113, Val Acc: 91.80%
+Epoch [09/70] Train Loss: 0.1839 | Val Loss: 0.1890, Val Acc: 92.51%
+INFO: Validation loss decreased (0.1995 --> 0.1890). Saving model to 'best_model.pth'
+Epoch [10/70] Train Loss: 0.1739 | Val Loss: 0.1786, Val Acc: 93.28%
+INFO: Validation loss decreased (0.1890 --> 0.1786). Saving model to 'best_model.pth'
+Epoch [11/70] Train Loss: 0.1699 | Val Loss: 0.1668, Val Acc: 93.93%
+INFO: Validation loss decreased (0.1786 --> 0.1668). Saving model to 'best_model.pth'
+Epoch [12/70] Train Loss: 0.1647 | Val Loss: 0.1749, Val Acc: 93.43%
+Epoch [13/70] Train Loss: 0.1636 | Val Loss: 0.1862, Val Acc: 92.90%
+Epoch [14/70] Train Loss: 0.1581 | Val Loss: 0.1900, Val Acc: 93.16%
+Epoch [15/70] Train Loss: 0.1585 | Val Loss: 0.1623, Val Acc: 93.90%
+INFO: Validation loss decreased (0.1668 --> 0.1623). Saving model to 'best_model.pth'
+Epoch [16/70] Train Loss: 0.1545 | Val Loss: 0.1637, Val Acc: 93.87%
+Epoch [17/70] Train Loss: 0.1498 | Val Loss: 0.1718, Val Acc: 93.22%
+Epoch [18/70] Train Loss: 0.1508 | Val Loss: 0.1487, Val Acc: 94.22%
+INFO: Validation loss decreased (0.1623 --> 0.1487). Saving model to 'best_model.pth'
+Epoch [19/70] Train Loss: 0.1473 | Val Loss: 0.1817, Val Acc: 93.28%
+Epoch [20/70] Train Loss: 0.1443 | Val Loss: 0.2572, Val Acc: 91.95%
+Epoch [21/70] Train Loss: 0.1383 | Val Loss: 0.1522, Val Acc: 94.28%
+Epoch [22/70] Train Loss: 0.1371 | Val Loss: 0.1894, Val Acc: 92.95%
+Epoch [23/70] Train Loss: 0.1409 | Val Loss: 0.2195, Val Acc: 91.04%
+Epoch [24/70] Train Loss: 0.1372 | Val Loss: 0.1496, Val Acc: 94.04%
+Epoch [25/70] Train Loss: 0.1346 | Val Loss: 0.1552, Val Acc: 94.75%
+Epoch [26/70] Train Loss: 0.1315 | Val Loss: 0.1633, Val Acc: 94.07%
+Epoch [27/70] Train Loss: 0.1312 | Val Loss: 0.1737, Val Acc: 93.28%
+Epoch [28/70] Train Loss: 0.1302 | Val Loss: 0.1529, Val Acc: 94.63%
+
+Early stopping triggered after 10 epochs with no improvement.
+
+Training complete. Best model saved from epoch 18 with validation loss: 0.1487
+[Training] Training finished.
+[Evaluation] Loading best model and evaluating on the test set...
+
+[Results] Segment-wise metrics on the test set:
+  Accuracy:           88.68%
+  Sensitivity:        79.56%
+  Specificity:        94.27%
+  F1 Score:           84.24%
+  AUC:                0.9371
+
+All experiments completed.
