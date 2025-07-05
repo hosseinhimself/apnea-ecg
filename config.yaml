@@ -4,32 +4,32 @@ dataset:
   source_url: https://physionet.org/content/apnea-ecg/1.0.0/
   sampling_rate: 100
   segment_lengths:
-    - 60   # in seconds, 1-minute segments
-  #  - 180  # in seconds, 3-minute segments
+    - 60
   preprocessing:
     bandpass_filter:
       lowcut: 0.5
       highcut: 48
       order: 4
-    normalization: z-score  # assumed per segment normalization
+    normalization: z-score
 
 model:
   cnn:
     num_layers: 10
-    dropout: 0.3
+    # <--- FIX: Increased dropout to reduce overfitting --->
+    dropout: 0.5
     activation: relu
   transformer:
     encoder_decoder: false
-    dropout: 0.3
-    # Specific transformer parameters are not provided in the paper and should be configurable
+    # <--- FIX: Increased dropout to reduce overfitting --->
+    dropout: 0.5
 
 training:
   optimizer: adam
-  learning_rate: 0.001
-  betas:
-    beta1: 0.9
-    beta2: 0.999
-  epsilon: 1e-8
+  learning_rate: 0.0001 # <--- FIX: Lowered learning rate for more stable training
+  # <--- FIX: Added new parameters for the trainer --->
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  # --- Removed obsolete parameters like betas and epsilon for simplicity ---
   batch_size: 32
   epochs: 70
   loss_function: cross_entropy

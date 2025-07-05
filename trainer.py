@@ -1,10 +1,13 @@
 ## trainer.py
 
-from typing import Dict, Optional
+import warnings
+from typing import Dict
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+# <--- FIX: Import learning rate scheduler
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 class Trainer:
@@ -35,30 +38,36 @@ class Trainer:
 
         training_cfg: dict = self.config.get("training", {})
         lr: float = float(training_cfg.get("learning_rate", 0.001))
-        beta1: float = float(training_cfg.get("betas", {}).get("beta1", 0.9))
-        beta2: float = float(training_cfg.get("betas", {}).get("beta2", 0.999))
-        eps: float = float(training_cfg.get("epsilon", 1e-8))
+        # <--- FIX: Add weight_decay to combat overfitting --->
+        weight_decay: float = float(training_cfg.get("weight_decay", 1e-4))
         self.epochs: int = int(training_cfg.get("epochs", 70))
+        
+        # <--- FIX: Add Early Stopping parameters --->
+        self.early_stopping_patience: int = int(training_cfg.get("early_stopping_patience", 10))
+        self.epochs_no_improve: int = 0
 
+
+        # <--- FIX: Add weight_decay to the optimizer --->
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=lr, betas=(beta1, beta2), eps=eps
+            self.model.parameters(), lr=lr, weight_decay=weight_decay
         )
         self.criterion = nn.CrossEntropyLoss()
+        
+        # <--- FIX: Initialize the learning rate scheduler --->
+        # It will reduce the learning rate when validation loss stops improving.
+        self.scheduler = ReduceLROnPlateau(self.optimizer, 'min', factor=0.1, patience=5, verbose=True)
 
         self.best_val_loss: float = float("inf")
         self.best_epoch: int = -1
 
     def train(self) -> None:
         """
-        Execute the training and validation loop.
+        Execute the training and validation loop with early stopping.
         """
         for epoch in range(1, self.epochs + 1):
             self.model.train()
             epoch_train_loss = 0.0
-            correct_train = 0
-            total_train = 0
-
-            for batch_idx, (batch_x, batch_y) in enumerate(self.train_loader):
+            for batch_x, batch_y in self.train_loader:
                 batch_x = batch_x.to(self.device, non_blocking=True)
                 batch_y = batch_y.to(self.device, non_blocking=True)
 
@@ -67,66 +76,67 @@ class Trainer:
                 loss = self.criterion(outputs, batch_y)
 
                 if torch.isnan(loss):
-                    warnings.warn(f"NaN loss detected at epoch {epoch}, batch {batch_idx}. Skipping step.")
+                    warnings.warn("NaN loss detected. Skipping step.")
                     continue
 
                 loss.backward()
-                
-                # <--- FIX: Add gradient clipping for training stability --->
-                # This helps prevent exploding gradients, which can be an issue in complex models.
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                
                 self.optimizer.step()
+                epoch_train_loss += loss.item()
 
-                epoch_train_loss += loss.item() * batch_x.size(0)
-                preds = torch.argmax(outputs, dim=1)
-                correct_train += (preds == batch_y).sum().item()
-                total_train += batch_x.size(0)
-
-            epoch_train_loss /= total_train if total_train > 0 else 1
-            train_accuracy = correct_train / total_train if total_train > 0 else 0.0
+            avg_train_loss = epoch_train_loss / len(self.train_loader)
 
             # Validation Phase
-            self.model.eval()
-            epoch_val_loss = 0.0
-            correct_val = 0
-            total_val = 0
-            with torch.no_grad():
-                for batch_x, batch_y in self.val_loader:
-                    batch_x = batch_x.to(self.device, non_blocking=True)
-                    batch_y = batch_y.to(self.device, non_blocking=True)
-                    outputs = self.model(batch_x)
-                    loss = self.criterion(outputs, batch_y)
-                    epoch_val_loss += loss.item() * batch_x.size(0)
-                    preds = torch.argmax(outputs, dim=1)
-                    correct_val += (preds == batch_y).sum().item()
-                    total_val += batch_x.size(0)
-
-            epoch_val_loss /= total_val if total_val > 0 else 1
-            val_accuracy = correct_val / total_val if total_val > 0 else 0.0
+            avg_val_loss, val_accuracy = self.validate()
+            
+            # <--- FIX: Step the scheduler with the validation loss --->
+            self.scheduler.step(avg_val_loss)
 
             print(
                 f"Epoch [{epoch}/{self.epochs}] "
-                f"Train Loss: {epoch_train_loss:.4f}, Train Acc: {train_accuracy*100:.2f}% | "
-                f"Val Loss: {epoch_val_loss:.4f}, Val Acc: {val_accuracy*100:.2f}%"
+                f"Train Loss: {avg_train_loss:.4f} | "
+                f"Val Loss: {avg_val_loss:.4f}, Val Acc: {val_accuracy*100:.2f}%"
             )
 
-            if epoch_val_loss < self.best_val_loss:
-                self.best_val_loss = epoch_val_loss
+            # Early Stopping and Checkpoint Logic
+            if avg_val_loss < self.best_val_loss:
+                print(f"Validation loss decreased ({self.best_val_loss:.4f} --> {avg_val_loss:.4f}). Saving model...")
+                self.best_val_loss = avg_val_loss
                 self.best_epoch = epoch
-                # No need to save checkpoint in this context, but the logic is fine.
-                # self.save_checkpoint(f"best_model_epoch_{epoch}.pth")
-                print(f"INFO: New best validation loss found: {self.best_val_loss:.4f}")
+                self.epochs_no_improve = 0
+                self.save_checkpoint("best_model.pth")
+            else:
+                self.epochs_no_improve += 1
+                print(f"Validation loss did not improve for {self.epochs_no_improve} epoch(s).")
 
-        print(f"Training complete. Best validation loss: {self.best_val_loss:.4f} at epoch {self.best_epoch}")
+            if self.epochs_no_improve >= self.early_stopping_patience:
+                print(f"Early stopping triggered after {self.early_stopping_patience} epochs with no improvement.")
+                break
+
+        print(f"\nTraining complete. Best model from epoch {self.best_epoch} with validation loss: {self.best_val_loss:.4f}")
+
+    def validate(self) -> tuple[float, float]:
+        """Performs a validation pass and returns average loss and accuracy."""
+        self.model.eval()
+        val_loss = 0.0
+        correct_val = 0
+        total_val = 0
+        with torch.no_grad():
+            for batch_x, batch_y in self.val_loader:
+                batch_x = batch_x.to(self.device, non_blocking=True)
+                batch_y = batch_y.to(self.device, non_blocking=True)
+                outputs = self.model(batch_x)
+                loss = self.criterion(outputs, batch_y)
+                val_loss += loss.item()
+                
+                preds = torch.argmax(outputs, dim=1)
+                correct_val += (preds == batch_y).sum().item()
+                total_val += batch_x.size(0)
+        
+        avg_loss = val_loss / len(self.val_loader)
+        accuracy = correct_val / total_val if total_val > 0 else 0.0
+        return avg_loss, accuracy
 
     def save_checkpoint(self, path: str) -> None:
         """Saves model checkpoint."""
-        checkpoint = {
-            "model_state_dict": self.model.state_dict(),
-            "optimizer_state_dict": self.optimizer.state_dict(),
-            "best_val_loss": self.best_val_loss,
-            "best_epoch": self.best_epoch,
-        }
-        torch.save(checkpoint, path)
-        
+        torch.save(self.model.state_dict(), path)
