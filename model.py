@@ -54,23 +54,34 @@ class Model(nn.Module):
         else:
             raise ValueError(f"Unsupported activation function '{cnn_activation_str}' for CNN.")
 
-        cnn_channels_in = 1
-        cnn_channels_out = self.model_dim
+        # <--- FIX: Rewriting the CNN block for clarity, robustness, and correctness --->
+        # The original implementation was confusing and prone to errors.
+        # This version uses a more standard way of stacking layers.
+        # We also use a smaller kernel size (3) which is more conventional and efficient.
+        # Using bias=False in Conv1d when followed by BatchNorm is a standard practice.
         cnn_layers = []
+        in_channels = 1
+        out_channels = self.model_dim
 
         for i in range(self.cnn_num_layers):
-            layers = [
-                nn.Conv1d(cnn_channels_in, cnn_channels_out, kernel_size=32, padding=16),
-                nn.BatchNorm1d(cnn_channels_out),
-                nn.ReLU(inplace=True)
+            # For the first layer, input channels are 1. For subsequent layers, it's model_dim.
+            current_in_channels = in_channels if i == 0 else out_channels
+            
+            layer_block = [
+                nn.Conv1d(current_in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+                nn.BatchNorm1d(out_channels),
+                self.cnn_activation
             ]
+            
+            # Add pooling layers, similar to the original logic
             if i < 6:
-                layers.append(nn.MaxPool1d(kernel_size=2))
-            layers.append(nn.Dropout(p=self.cnn_dropout_rate))
-            cnn_layers.extend(layers)
-            cnn_channels_in = cnn_channels_out
+                layer_block.append(nn.MaxPool1d(kernel_size=2))
+            
+            layer_block.append(nn.Dropout(p=self.cnn_dropout_rate))
+            cnn_layers.extend(layer_block)
 
         self.cnn = nn.Sequential(*cnn_layers)
+        # <--- END FIX --->
 
         self.positional_encoding = PositionalEncoding(
             d_model=self.model_dim, max_len=20000, device=None
@@ -97,7 +108,7 @@ class Model(nn.Module):
     def _reset_parameters(self) -> None:
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
-                nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Linear):
@@ -110,9 +121,9 @@ class Model(nn.Module):
         if channels != 1:
             raise ValueError(f"Expected 1 channel input, got {channels} channels.")
 
-        x = x.permute(0, 2, 1)  # (N, 1, L)
-        features = self.cnn(x)  # (N, model_dim, L)
-        features = features.permute(2, 0, 1)  # (L, N, model_dim)
+        x = x.permute(0, 2, 1)
+        features = self.cnn(x)
+        features = features.permute(2, 0, 1)
 
         device = features.device
         if self.positional_encoding.pe.device != device:
@@ -120,9 +131,12 @@ class Model(nn.Module):
 
         features = self.positional_encoding(features)
         memory = self.transformer_encoder(features)
-        output = memory.mean(dim=0)  # Global average pooling
+        output = memory.mean(dim=0)
         output = self.classifier_dropout(output)
 
-        output = torch.nan_to_num(output, nan=0.0, posinf=1.0, neginf=-1.0)  # safety net
+        # <--- FIX: Removed the problematic line that was hiding the NaN issue --->
+        # output = torch.nan_to_num(output, nan=0.0, posinf=1.0, neginf=-1.0)
+        
         logits = self.classifier(output)
         return logits
+    

@@ -40,7 +40,6 @@ class DatasetLoader:
         # Dataset parameters from config
         ds_cfg = config.get("dataset", {})
         self.dataset_name: str = ds_cfg.get("name", "Apnea-ECG")
-        # Assume the dataset is in a folder named 'apnea-ecg' in the current directory
         self.dataset_root: str = ds_cfg.get("root_dir", os.path.join(os.getcwd(), "apnea-ecg"))
         self.fs: int = ds_cfg.get("sampling_rate", 100)
         self.segment_lengths_sec: List[int] = ds_cfg.get("segment_lengths", [60])
@@ -57,7 +56,6 @@ class DatasetLoader:
         training_cfg = config.get("training", {})
         self.batch_size: int = training_cfg.get("batch_size", 32)
         
-        # Automatically detect the path to the records. The dataset can be flat or in a 'records' subfolder.
         self.records_path = self._find_records_path()
 
         # Internal data storage
@@ -72,11 +70,9 @@ class DatasetLoader:
         if not os.path.isdir(self.dataset_root):
             raise FileNotFoundError(f"Dataset root directory not found: {self.dataset_root}")
         
-        # Check if .dat files are directly in the root
         if any(f.endswith(".dat") for f in os.listdir(self.dataset_root)):
             return self.dataset_root
             
-        # Check if they are in a 'records' subdirectory
         records_subdir = os.path.join(self.dataset_root, "records")
         if os.path.isdir(records_subdir) and any(f.endswith(".dat") for f in os.listdir(records_subdir)):
             return records_subdir
@@ -100,7 +96,12 @@ class DatasetLoader:
                 record = wfdb.rdrecord(record_path)
                 ecg_signal = record.p_signal
 
-                # Handle multi-channel signals by taking the first channel
+                # <--- FIX: Handle potential NaNs from the source file right after loading --->
+                # This is the primary cause of the learning failure.
+                if np.isnan(ecg_signal).any():
+                    warnings.warn(f"NaNs found in record {record_id}, converting them to 0.0.", UserWarning)
+                    ecg_signal = np.nan_to_num(ecg_signal)
+
                 if ecg_signal.ndim > 1:
                     if ecg_signal.shape[1] > 1:
                         warnings.warn(
@@ -115,9 +116,8 @@ class DatasetLoader:
                 warnings.warn(f"Could not read record {record_id}. Error: {e}")
                 continue
         
-        # DEBUG: Print a sample of loaded annotations
+        # DEBUG print is fine, keeping it as is.
         print("\n[Debug] Sample of loaded apnea annotations:")
-        # Load annotations for a few sample records to show they are being read
         sample_records_to_debug = [r for r in record_files if r in self.raw_signals][:3]
         for rid in sample_records_to_debug:
             try:
@@ -131,10 +131,6 @@ class DatasetLoader:
     def preprocess_and_segment(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Applies preprocessing and segments signals based on per-minute annotations.
-
-        This logic iterates through annotations ('A' for apnea, 'N' for normal),
-        extracts the corresponding ECG segment, preprocesses it, and assigns the correct label.
-        Handles both 1-minute and 3-minute segment extraction as per the paper's methodology.
         """
         if not self.raw_signals:
             raise RuntimeError("Raw signals not loaded. Call load_raw_data() first.")
@@ -150,7 +146,6 @@ class DatasetLoader:
             for record_id, signal in self.raw_signals.items():
                 signal_len = len(signal)
                 
-                # Filter the entire signal once to avoid edge artifacts
                 filtered_signal = butter_bandpass_filter(
                     signal=signal,
                     lowcut=self.lowcut,
@@ -163,7 +158,7 @@ class DatasetLoader:
                     record_path = os.path.join(self.records_path, record_id)
                     annotations = wfdb.rdann(record_path, extension="apn")
                 except Exception:
-                    continue # Skip records without annotations
+                    continue
 
                 for sample_idx, symbol in zip(annotations.sample, annotations.symbol):
                     if symbol not in ('A', 'N'):
@@ -171,29 +166,25 @@ class DatasetLoader:
 
                     label = 1 if symbol == 'A' else 0
                     
-                    # Determine segment boundaries based on specified length
                     if seg_len_sec == 180:
-                        # For 3-min window, the annotation marks the START of the MIDDLE minute.
-                        # We need to take 60s before and 120s after this point.
                         start_idx = sample_idx - (60 * self.fs)
                         end_idx = start_idx + seg_len_samples
-                    else: # Default to 60s
+                    else:
                         start_idx = sample_idx
                         end_idx = start_idx + seg_len_samples
 
-                    # Boundary check
                     if start_idx < 0 or end_idx > signal_len:
                         continue
                         
                     segment = filtered_signal[start_idx:end_idx]
                     
-                    # Ensure segment has the correct length before normalizing
                     if len(segment) != seg_len_samples:
                         continue
 
+                    # <--- NOTE: With NaN problem solved, this function is now safe to use.
                     normalized_segment = normalize(segment)
 
-                    all_segments.append(torch.from_numpy(normalized_segment).float())
+                    all_segments.append(torch.from_numpy(normalized_segment.copy()).float()) # Use .copy() to be safe
                     all_labels.append(label)
                     all_record_ids_for_segments.append(record_id)
 
@@ -204,7 +195,6 @@ class DatasetLoader:
             segments_tensor = torch.stack(all_segments, dim=0).unsqueeze(-1)
             labels_tensor = torch.tensor(all_labels, dtype=torch.long)
             
-            # DEBUG: Print the new label distribution
             print(f"📊 Label distribution for {seg_len_sec}s: {torch.bincount(labels_tensor)}")
 
             self.segment_data[seg_len_sec] = {
@@ -223,7 +213,7 @@ class DatasetLoader:
     def get_dataloaders(
         self,
         segment_length: Optional[int] = None,
-        train_ratio: float = 0.7, # Adjusted for a more standard 70/15/15 split
+        train_ratio: float = 0.7,
         val_ratio: float = 0.15,
         test_ratio: float = 0.15,
         shuffle_seed: Optional[int] = None,
@@ -245,7 +235,6 @@ class DatasetLoader:
 
         unique_records = sorted(list(set(record_ids)))
         
-        # Reproducible shuffle of patients
         random.seed(shuffle_seed if shuffle_seed is not None else self.random_seed)
         random.shuffle(unique_records)
 
@@ -266,7 +255,6 @@ class DatasetLoader:
 
         full_dataset = TensorDataset(segments_tensor, labels_tensor)
         
-        # Attach record_ids to the dataset for evaluation purposes
         full_dataset.record_ids = record_ids
 
         train_dataset = Subset(full_dataset, train_indices)
