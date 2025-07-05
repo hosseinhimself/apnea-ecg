@@ -15,24 +15,23 @@ dataset:
 model:
   cnn:
     num_layers: 10
-    # <--- FIX: Increased dropout to reduce overfitting --->
-    dropout: 0.5
+    # <--- FIX: Lowered dropout slightly to give the model more learning capacity
+    dropout: 0.4
     activation: relu
   transformer:
     encoder_decoder: false
-    # <--- FIX: Increased dropout to reduce overfitting --->
-    dropout: 0.5
+    # <--- FIX: Lowered dropout slightly
+    dropout: 0.4
 
 training:
   optimizer: adam
-  learning_rate: 0.0001 # <--- FIX: Lowered learning rate for more stable training
-  # <--- FIX: Added new parameters for the trainer --->
+  # <--- FIX: Slightly increased learning rate to give the model more momentum
+  learning_rate: 0.0005 
   weight_decay: 0.0001
   early_stopping_patience: 10
-  # --- Removed obsolete parameters like betas and epsilon for simplicity ---
   batch_size: 32
   epochs: 70
-  loss_function: cross_entropy
+  loss_function: cross_entropy # This is just a name, the code now uses weighted loss
 
 evaluation:
   metrics:
