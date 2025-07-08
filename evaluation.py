@@ -16,7 +16,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from model import Model  # as per design, Model class
+from model import Model 
 
 
 class Evaluation:
